@@ -45,19 +45,7 @@ export async function getSubjectById(id: string, userId: string) {
     include: {
       topics: {
         include: {
-          cards: {
-            select: {
-              id: true,
-              front: true,
-              back: true,
-              easeFactor: true,
-              interval: true,
-              repetitions: true,
-              dueAt: true,
-              lastReviewed: true,
-              avgQuality: true,
-              reviewCount: true,
-            },
+          cards: true,
           },
           _count: { select: { cards: true } },
         },
