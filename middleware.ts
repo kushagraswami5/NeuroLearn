@@ -53,5 +53,14 @@ export default function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!api/auth|api/embed|_next/static|_next/image|favicon.ico|public).*)"],
+  matcher: [
+    "/dashboard/:path*",
+    "/subjects/:path*",
+    "/quiz/:path*",
+    "/tutor/:path*",
+    "/revision/:path*",
+    "/analytics/:path*",
+    "/files/:path*",
+    "/settings/:path*",
+  ],
 };
