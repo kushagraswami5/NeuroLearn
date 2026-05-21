@@ -46,7 +46,6 @@ export async function getSubjectById(id: string, userId: string) {
       topics: {
         include: {
           cards: true,
-          },
           _count: { select: { cards: true } },
         },
         orderBy: { order: "asc" },
