@@ -35,57 +35,63 @@ export async function saveQuizResultsAction(data: {
   try {
     const user = await requireUser();
 
+    console.log("[quiz] topicId:", data.topicId, "subjectId:", data.subjectId);
+
     const parsed = saveResultsSchema.safeParse(data);
     if (!parsed.success) {
       console.error("[quiz] Validation failed:", parsed.error.errors);
       return { error: "Invalid data: " + parsed.error.errors[0]?.message };
     }
 
+    console.log("[quiz] parsed topicId:", parsed.data.topicId);
+
     const xpEarned = Math.round(parsed.data.score / 5);
 
-    // Keep transaction small — only session + user update
-    const { session, newStreak } = await prisma.$transaction(async (tx) => {
-      const userRecord = await tx.user.findUnique({
-        where: { id: user.id },
-        select: { streakDays: true, lastStudiedAt: true },
-      });
-
-      const newStreak = calculateStreak(
-        [new Date()],
-        userRecord?.streakDays ?? 0,
-        userRecord?.lastStudiedAt ?? null
-      );
-
-      const session = await tx.quizSession.create({
-        data: {
-          userId: user.id,
-          subjectId: parsed.data.subjectId || null,
-          status: "COMPLETED",
-          totalCards: parsed.data.questions.length,
-          correctCount: parsed.data.correctCount,
-          score: parsed.data.score,
-          completedAt: new Date(),
-        },
-      });
-
-      await tx.user.update({
-        where: { id: user.id },
-        data: {
-          totalXp: { increment: xpEarned },
-          streakDays: newStreak,
-          lastStudiedAt: new Date(),
-        },
-      });
-
-      return { session, newStreak };
+    // Step 1: get user streak info
+    const userRecord = await prisma.user.findUnique({
+      where: { id: user.id },
+      select: { streakDays: true, lastStudiedAt: true },
     });
 
-    // Card creation outside transaction to free up connection immediately
+    const newStreak = calculateStreak(
+      [new Date()],
+      userRecord?.streakDays ?? 0,
+      userRecord?.lastStudiedAt ?? null
+    );
+
+    // Step 2: create quiz session
+    const session = await prisma.quizSession.create({
+      data: {
+        userId: user.id,
+        subjectId: parsed.data.subjectId || null,
+        status: "COMPLETED",
+        totalCards: parsed.data.questions.length,
+        correctCount: parsed.data.correctCount,
+        score: parsed.data.score,
+        completedAt: new Date(),
+      },
+    });
+
+    // Step 3: update user XP + streak
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        totalXp: { increment: xpEarned },
+        streakDays: newStreak,
+        lastStudiedAt: new Date(),
+      },
+    });
+
+    // Step 4: create cards if topicId provided
     let cardsCreated = 0;
     if (parsed.data.topicId) {
+      console.log("[quiz] looking up topic:", parsed.data.topicId);
+
       const topic = await prisma.topic.findFirst({
         where: { id: parsed.data.topicId, subject: { userId: user.id } },
       });
+
+      console.log("[quiz] topic found:", topic?.id ?? "NOT FOUND");
 
       if (topic) {
         await prisma.card.createMany({
@@ -104,9 +110,13 @@ export async function saveQuizResultsAction(data: {
         });
 
         cardsCreated = parsed.data.questions.length;
+        console.log("[quiz] cards created:", cardsCreated);
       }
+    } else {
+      console.log("[quiz] no topicId — skipping card creation");
     }
 
+    // Step 5: track event
     await trackEvent(user.id, "quiz.completed", {
       sessionId: session.id,
       score: parsed.data.score,

@@ -45,15 +45,13 @@ export async function reviewCardAction(data: unknown) {
       return { error: "Invalid data: " + parsed.error.errors[0]?.message };
     }
 
-    const { cardId, quality, sessionId, timeTakenMs } = parsed.data;
+    const { cardId, quality, timeTakenMs } = parsed.data;
 
-    // Fetch current card state
     const card = await prisma.card.findFirst({
       where: { id: cardId, topic: { subject: { userId: user.id } } },
     });
     if (!card) return { error: "Card not found" };
 
-    // Apply SM-2 algorithm
     const sm2Result = applyReview(
       {
         easeFactor: card.easeFactor,
@@ -67,21 +65,9 @@ export async function reviewCardAction(data: unknown) {
       quality
     );
 
-    // Save SM-2 results
     await updateCardSM2(cardId, user.id, sm2Result);
 
-    // Record attempt
     const wasCorrect = quality >= 3;
-    await prisma.quizAttempt.create({
-      data: {
-        quizSessionId: sessionId,
-        cardId,
-        quality,
-        wasCorrect,
-        timeTakenMs,
-      },
-    });
-
     return { data: { sm2: sm2Result, wasCorrect } };
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Failed to record review" };
@@ -102,7 +88,6 @@ export async function completeRevisionSessionAction(params: {
 
     const xpEarned = calculateXP(attempts);
 
-    // Update revision session
     await prisma.revisionSession.update({
       where: { id: sessionId, userId: user.id },
       data: {
@@ -112,7 +97,6 @@ export async function completeRevisionSessionAction(params: {
       },
     });
 
-    // Update user XP and streak
     const userRecord = await prisma.user.findUnique({
       where: { id: user.id },
       select: { streakDays: true, lastStudiedAt: true, totalXp: true },
@@ -167,14 +151,12 @@ export async function bulkCreateCardsAction(params: {
     const user = await requireUser();
     const { topicId, cards } = params;
 
-    // Verify topic ownership
     const topic = await prisma.topic.findFirst({
       where: { id: topicId, subject: { userId: user.id } },
       include: { subject: true },
     });
     if (!topic) return { error: "Topic not found" };
 
-    // Validate all cards
     if (!Array.isArray(cards) || cards.length === 0) {
       return { error: "No cards provided" };
     }
@@ -195,7 +177,6 @@ export async function bulkCreateCardsAction(params: {
       })),
     });
 
-    // Update subject card count
     await prisma.subject.update({
       where: { id: topic.subjectId },
       data: { cardCount: { increment: validCards.length } },

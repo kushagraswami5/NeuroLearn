@@ -92,7 +92,7 @@ export function TopicList({ topics, subjectId, subjectColor }: TopicListProps) {
             {isExpanded && (
               <CardContent className="pt-0 pb-4 px-4 space-y-3">
                 <div className="flex justify-end gap-2">
-                  <Link href={`/quiz/new?topicId=${topic.id}`}>
+                  <Link href={`/quiz/new?topicId=${topic.id}&subjectId=${subjectId}`}>
                     <Button variant="outline" size="sm" className="text-xs h-7">
                       Generate Quiz
                     </Button>

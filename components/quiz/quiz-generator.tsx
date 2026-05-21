@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -36,18 +37,22 @@ interface QuizGeneratorProps {
   subjects: Subject[];
   files: UploadedFile[];
   userId: string;
+  defaultTopicId?: string;
+  defaultSubjectId?: string;
 }
 
 type SourceType = "file" | "topic" | "text";
 
-export function QuizGenerator({ subjects, files, userId }: QuizGeneratorProps) {
-  const [sourceType, setSourceType] = useState<SourceType>("file");
+export function QuizGenerator({ subjects, files, userId, defaultTopicId, defaultSubjectId }: QuizGeneratorProps) {
+  const router = useRouter();
+  const [sourceType, setSourceType] = useState<SourceType>(defaultTopicId ? "topic" : "file");
   const [selectedFile, setSelectedFile] = useState<string>("");
-  const [selectedSubject, setSelectedSubject] = useState<string>("");
-  const [selectedTopic, setSelectedTopic] = useState<string>("");
+  const [selectedSubject, setSelectedSubject] = useState<string>(defaultSubjectId ?? "");
+  const [selectedTopic, setSelectedTopic] = useState<string>(defaultTopicId ?? "");
   const [questionCount, setQuestionCount] = useState(10);
   const [isGenerating, setIsGenerating] = useState(false);
   const [quiz, setQuiz] = useState<QuizQuestion[] | null>(null);
+  const [quizResult, setQuizResult] = useState<{ xpEarned: number; newStreak: number; cardsCreated: number } | null>(null);
   const [quizState, setQuizState] = useState<{
     currentIdx: number;
     answers: Record<string, string>;
@@ -55,12 +60,17 @@ export function QuizGenerator({ subjects, files, userId }: QuizGeneratorProps) {
     sessionId: string | null;
   }>({ currentIdx: 0, answers: {}, submitted: false, sessionId: null });
 
+  // Track what was actually used to generate — not current dropdown state
+  const [generatedWithTopicId, setGeneratedWithTopicId] = useState<string>(defaultTopicId ?? "");
+  const [generatedWithSubjectId, setGeneratedWithSubjectId] = useState<string>(defaultSubjectId ?? "");
+
   const selectedSubjectObj = subjects.find((s) => s.id === selectedSubject);
   const topics = selectedSubjectObj?.topics ?? [];
 
   async function handleGenerate() {
     setIsGenerating(true);
     setQuiz(null);
+    setQuizResult(null);
 
     try {
       const payload: Record<string, unknown> = { questionCount };
@@ -72,6 +82,10 @@ export function QuizGenerator({ subjects, files, userId }: QuizGeneratorProps) {
         return;
       }
       if (selectedSubject) payload.subjectId = selectedSubject;
+
+      // Save what we're generating WITH before the async call
+      setGeneratedWithTopicId(selectedTopic);
+      setGeneratedWithSubjectId(selectedSubject);
 
       const res = await fetch("/api/quiz/generate", {
         method: "POST",
@@ -113,13 +127,32 @@ export function QuizGenerator({ subjects, files, userId }: QuizGeneratorProps) {
 
     setQuizState((prev) => ({ ...prev, submitted: true }));
 
-    await saveQuizResultsAction({
-      subjectId: selectedSubject || undefined,
+    // Use generatedWith* — not current dropdown state
+    const result = await saveQuizResultsAction({
+      subjectId: generatedWithSubjectId || undefined,
+      topicId: generatedWithTopicId || undefined,
       questions: quiz,
       answers: quizState.answers,
       score,
       correctCount,
     });
+
+    if (result?.error) {
+      toast.error("Failed to save: " + result.error);
+      return;
+    }
+
+    if (result?.data) {
+      setQuizResult({
+        xpEarned: result.data.xpEarned,
+        newStreak: result.data.newStreak,
+        cardsCreated: result.data.cardsCreated,
+      });
+      if (result.data.cardsCreated > 0) {
+        toast.success(`${result.data.cardsCreated} cards added to your topic!`);
+      }
+      router.refresh();
+    }
   }
 
   if (quiz && quizState.submitted) {
@@ -128,7 +161,6 @@ export function QuizGenerator({ subjects, files, userId }: QuizGeneratorProps) {
 
     return (
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
-        {/* Results header */}
         <Card>
           <CardContent className="pt-6 text-center space-y-3">
             <div className="text-5xl">{score >= 80 ? "🎉" : score >= 60 ? "👍" : "💪"}</div>
@@ -136,14 +168,22 @@ export function QuizGenerator({ subjects, files, userId }: QuizGeneratorProps) {
             <p className="text-muted-foreground">
               {correctCount} / {quiz.length} correct
             </p>
-            <Button onClick={() => setQuiz(null)} variant="outline">
+            {quizResult && (
+              <div className="flex gap-4 justify-center text-sm text-muted-foreground pt-1">
+                <span>⚡ +{quizResult.xpEarned} XP earned</span>
+                <span>🔥 {quizResult.newStreak} day streak</span>
+                {quizResult.cardsCreated > 0 && (
+                  <span>🃏 {quizResult.cardsCreated} cards created</span>
+                )}
+              </div>
+            )}
+            <Button onClick={() => { setQuiz(null); setQuizResult(null); }} variant="outline">
               <RotateCcw className="w-4 h-4 mr-2" />
               Generate New Quiz
             </Button>
           </CardContent>
         </Card>
 
-        {/* Question review */}
         {quiz.map((q, i) => {
           const userAnswer = quizState.answers[q.id];
           const isCorrect = userAnswer === q.correctId;
@@ -197,7 +237,6 @@ export function QuizGenerator({ subjects, files, userId }: QuizGeneratorProps) {
 
     return (
       <div className="space-y-4">
-        {/* Progress */}
         <div className="flex items-center justify-between text-sm">
           <span className="text-muted-foreground">Question {quizState.currentIdx + 1} of {quiz.length}</span>
           <Badge variant="outline">{current.difficulty}</Badge>
@@ -271,7 +310,6 @@ export function QuizGenerator({ subjects, files, userId }: QuizGeneratorProps) {
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-6">
-        {/* Source type */}
         <div className="grid grid-cols-2 gap-2">
           <button
             onClick={() => setSourceType("file")}
@@ -350,7 +388,6 @@ export function QuizGenerator({ subjects, files, userId }: QuizGeneratorProps) {
           </div>
         )}
 
-        {/* Question count */}
         <div className="space-y-3">
           <div className="flex justify-between">
             <Label>Number of Questions</Label>

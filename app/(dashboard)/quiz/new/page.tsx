@@ -5,7 +5,11 @@ import type { Metadata } from "next";
 
 export const metadata: Metadata = { title: "Generate Quiz" };
 
-export default async function QuizNewPage() {
+interface Props {
+  searchParams: { topicId?: string; subjectId?: string };
+}
+
+export default async function QuizNewPage({ searchParams }: Props) {
   const user = await requireUser();
   const [subjects, files] = await Promise.all([
     getSubjects(user.id),
@@ -29,6 +33,8 @@ export default async function QuizNewPage() {
         subjects={subjects as any}
         files={files}
         userId={user.id}
+        defaultTopicId={searchParams.topicId}
+        defaultSubjectId={searchParams.subjectId}
       />
     </div>
   );
