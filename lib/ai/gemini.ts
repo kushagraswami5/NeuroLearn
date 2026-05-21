@@ -84,7 +84,7 @@ export async function geminiGenerateQuiz(
  */
 export async function geminiStreamTutor(
   systemPrompt: string,
-  messages: Array<{ role: "user" | "model"; parts: [{ text: string }] }>
+  messages: Array<{ role: "user" | "model"; parts: { text: string }[] }>
 ): Promise<ReadableStream<string>> {
   const client = getClient();
   const model = client.getGenerativeModel({
